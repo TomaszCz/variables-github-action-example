@@ -1,6 +1,5 @@
 import { GetLocalVariablesResponse, LocalVariable } from '@figma/rest-api-spec'
 import { rgbToHex } from './color.js'
-import { Token, TokensFile } from './token_types.js'
 
 function tokenTypeFromVariable(variable: LocalVariable) {
   switch (variable.resolvedType) {
@@ -24,7 +23,7 @@ function tokenValueFromVariable(
   if (typeof value === 'object') {
     if ('type' in value && value.type === 'VARIABLE_ALIAS') {
       const aliasedVariable = localVariables[value.id]
-      return `{${aliasedVariable.name.replace(/\//g, '.')}}`
+      return `${aliasedVariable.name}`
     } else if ('r' in value) {
       return rgbToHex(value)
     }
@@ -35,49 +34,44 @@ function tokenValueFromVariable(
   }
 }
 
+function isAliasVariable(
+  variable: LocalVariable,
+  modeId: string
+): boolean {
+  const value = variable.valuesByMode[modeId];
+  return typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    value.type === 'VARIABLE_ALIAS';
+}
+
 export function tokenFilesFromLocalVariables(localVariablesResponse: GetLocalVariablesResponse) {
-  const tokenFiles: { [fileName: string]: TokensFile } = {}
-  const localVariableCollections = localVariablesResponse.meta.variableCollections
-  const localVariables = localVariablesResponse.meta.variables
+  const collections: { name: string; modes: any[] }[] = [];
+  const localVariableCollections = localVariablesResponse.meta.variableCollections;
+  const localVariables = localVariablesResponse.meta.variables;
 
-  Object.values(localVariables).forEach((variable) => {
-    // Skip remote variables because we only want to generate tokens for local variables
-    if (variable.remote) {
-      return
-    }
+  Object.values(localVariableCollections).forEach((collection) => {
+    const modes = collection.modes.map((mode) => {
+      return {
+        name: mode.name,
+        variables: Object.values(localVariables)
+          .filter((variable) => !variable.remote && variable.variableCollectionId === collection.id)
+          .map((variable) => ({
+            name: variable.name,
+            type: tokenTypeFromVariable(variable),
+            isAlias: isAliasVariable(variable, mode.modeId),
+            value: tokenValueFromVariable(variable, mode.modeId, localVariables),
+          })),
+      };
+    });
 
-    const collection = localVariableCollections[variable.variableCollectionId]
+    collections.push({
+      name: collection.name,
+      modes,
+    });
+  });
 
-    collection.modes.forEach((mode) => {
-      const fileName = `${collection.name}.${mode.name}.json`
-
-      if (!tokenFiles[fileName]) {
-        tokenFiles[fileName] = {}
-      }
-
-      let obj: any = tokenFiles[fileName]
-
-      variable.name.split('/').forEach((groupName) => {
-        obj[groupName] = obj[groupName] || {}
-        obj = obj[groupName]
-      })
-
-      const token: Token = {
-        $type: tokenTypeFromVariable(variable),
-        $value: tokenValueFromVariable(variable, mode.modeId, localVariables),
-        $description: variable.description,
-        $extensions: {
-          'com.figma': {
-            hiddenFromPublishing: variable.hiddenFromPublishing,
-            scopes: variable.scopes,
-            codeSyntax: variable.codeSyntax,
-          },
-        },
-      }
-
-      Object.assign(obj, token)
-    })
-  })
-
-  return tokenFiles
+  return {
+    "variables-3-9-3.json": collections,
+  };
 }

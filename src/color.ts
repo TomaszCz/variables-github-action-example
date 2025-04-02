@@ -18,9 +18,9 @@ export function parseColor(color: string): RGB | RGBA {
     const expandedHex =
       hexValue.length === 3 || hexValue.length === 4
         ? hexValue
-            .split('')
-            .map((char) => char + char)
-            .join('')
+          .split('')
+          .map((char) => char + char)
+          .join('')
         : hexValue
 
     const alphaValue = expandedHex.length === 8 ? expandedHex.slice(6, 8) : undefined
